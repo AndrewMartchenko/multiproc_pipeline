@@ -4,8 +4,8 @@ import multiprocessing as mp
 
 
 
-class MultiProcPipe:
-    def __init__(self, head_proc):
+class MultiprocPipe:
+    def __init__(self, head_proc, maxqsize=100):
         # Creat multiprocesses
 
         self.head_proc = head_proc
@@ -16,11 +16,13 @@ class MultiProcPipe:
             self.tail_proc = proc
             proc = proc.next_proc
 
-        # Create input connection (tx)
-        self.head_proc.rx, self.tx = mp.Pipe(duplex=False)
+        # Create input queue
+        self.tx_q = mp.Queue(maxsize=maxqsize)
+        self.head_proc.rx_q = self.tx_q
 
-        # Create output connection (rx)
-        self.rx, self.tail_proc.tx = mp.Pipe(duplex=False)
+        # Create output queue
+        self.rx_q = mp.Queue(maxsize=maxqsize)
+        self.tail_proc.tx_q = self.rx_q
 
         # Start all the processes
         for p in self.mp_list:
@@ -29,16 +31,15 @@ class MultiProcPipe:
         # join multi processes ??
 
     def put(self, data):
-        self.tx.send(data)
+        self.tx_q.put(data)
 
-        if data is None:
-            #wait for 0.01 sec, then close connection
-            self.tx.close()
+        # Responsibility of self.get function to close
+        # pipe when None is received!
 
-    def get(self):
-        result = self.rx.recv()
+    def get(self, block=True, timeout=None):
+        result = self.rx_q.get(block, timeout)
         if result is None:
-            self.rx.close()
+            self.rx_q.close()
         return result
 
 
@@ -61,41 +62,27 @@ class Worker2:
 class Proc:
     def __init__(self, worker):
         # Pipe connections
-        self.tx = None
-        self.rx = None
+        self.tx_q = None
+        self.rx_q = None
         self.next_proc = None
         self.worker = worker
-        # self.args = args
-        
 
     def get(self):
-        # try:
-        #     val = self.rx.recv()
-        # except EOFError:
-        #     print('Connection closed')
-        #     val = None
-        res = self.rx.recv()
+        res = self.rx_q.get()
         if res is None:
-            self.rx.close()
+            self.rx_q.close()
         return res
 
     def put(self, val):
-        # if self.tx is None: # TODO: convert to try except block
-            # return False
-        self.tx.send(val)
-        if val is None:
-            # wait 0.1 sec, then close connection
-            self.tx.close()
+        self.tx_q.put(val)
 
-    def link(self, next_proc):
+    def link(self, next_proc, maxqsize=100):
         self.next_proc = next_proc
-        next_proc.rx, self.tx = mp.Pipe(duplex=False)
+        self.tx_q = mp.Queue(maxqsize)
+        self.next_proc.rx_q = self.tx_q
+        return self
 
-    # def close(self):
-        # if self.rx:
-            # self.rx.close()
-        # if self.tx:
-            # self.tx.close()
+
 
     def run(self):
 
@@ -103,97 +90,43 @@ class Proc:
             x = self.get()
 
             if x is None:
-                y = None
-            else:
-                y = self.worker.work(x)
-            print('run', x, y)
-
-
-            self.put(y)
-            if x is None:
+                self.put(None)
                 break
+            y = self.worker.work(x)
+            self.put(y)
 
         print('stage done')
-            
-
-    
-    # def result(self):
-        # """ Get item from queue. """
-
-
-
-def fun(conn):
-    while True:
-        try:
-            val = conn.recv()
-        except EOFError:
-            print('Connection closed')
-            break
-        
-        if val is None:
-            break
-        
-        print(val)
-        
-    conn.close()
 
 
 if __name__ == '__main__':
 
     w1 = Worker1()
     w2 = Worker2()
+    w3 = Worker1()
+    w4 = Worker2()
 
     p1 = Proc(w1)
     p2 = Proc(w2)
+    p3 = Proc(w3)
+    p4 = Proc(w4)
 
-    p1.link(p2)
-
-    pipe = MultiProcPipe(p1)
+    p1.link(p2.link(p3.link(p4)))
 
 
+    pipe = MultiprocPipe(p1)
+
+
+    # Put values in pipe
     for i in range(10):
         print('input:', i)
         pipe.put(i)
     pipe.put(None)
 
 
-
+    # Get results from pipe
     while True:
         v = pipe.get()
         print('output:', v)
         if v is None:
             break
 
-    # mp1 = mp.Process(target=p1.run)
-    # mp2 = mp.Process(target=p2.run)
-
-
-    # mp2.start()
-    # mp1.start()
-
-
-    # mp2.join()
-    # mp1.join()
-
-
-    # # p1 = proc(func1, args1)
-    # # p2 = proc(func2, args2)
-    # # p3 = proc(func3, args3)
-    # # p1.link(p2)
-    # # p2.link(p3)
-    # # or
-    # # p1 | p2 | p3
-    
-    # rx_conn, tx_conn = mp.Pipe(duplex=False)
-
-    
-
-    # p = mp.Process(target=fun, args=(rx_conn,))
-    # p.start()
-
-    # for i in range(20):
-    #     tx_conn.send((i, (i, i)))
-    # # tx_conn.send(None)
-    # tx_conn.close()
-
-    # p.join()
