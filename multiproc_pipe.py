@@ -1,7 +1,5 @@
 import multiprocessing as mp
-
-# TODO: use queue instead of pipe because pipe does not alow one to limit number of element that have been pushed onto the pipe
-
+import types
 
 
 class MultiprocPipe:
@@ -16,9 +14,13 @@ class MultiprocPipe:
             self.tail_proc = proc
             proc = proc.next_proc
 
-        # Create input queue
-        self.tx_q = mp.Queue(maxsize=maxqsize)
-        self.head_proc.rx_q = self.tx_q
+        if not self.head_proc.is_generator:
+            # Create input queue
+            self.tx_q = mp.Queue(maxsize=maxqsize)
+            self.head_proc.rx_q = self.tx_q
+        else:
+            self.tx_q = None
+            print('here')
 
         # Create output queue
         self.rx_q = mp.Queue(maxsize=maxqsize)
@@ -43,29 +45,33 @@ class MultiprocPipe:
         return result
 
 
-# This needs to be abstract class
-class Worker1:
-    def __init__(self):
-        pass
+def is_lambda(obj):
+    return isinstance(obj, types.LambdaType) and obj.__name__ == "<lambda>"
 
-    def work(self, x):
-        return x*10
-
-
-class Worker2:
-    def __init__(self):
-        pass
-
-    def work(self, x):
-        return x+1
 
 class Proc:
-    def __init__(self, worker):
+    __proc_count = 0 # keep track of how many processes have been created
+    def __init__(self, target, args, is_generator=False, id=None):
+        assert not is_lambda(target), 'target cannot be a lambda function.'
         # Pipe connections
         self.tx_q = None
         self.rx_q = None
         self.next_proc = None
-        self.worker = worker
+        self.is_generator = is_generator
+        self.target = target
+        self.args = args
+
+        if self.is_generator:
+            self.run = self.run_generator_process
+        else:
+            self.run = self.run_pipe_process
+           
+
+        if id is None:
+            self.id = Proc.__proc_count
+        else:
+            self.id = id
+        Proc.__proc_count += 1
 
     def get(self):
         res = self.rx_q.get()
@@ -77,50 +83,87 @@ class Proc:
         self.tx_q.put(val)
 
     def link(self, next_proc, maxqsize=100):
+        assert not next_proc.is_generator, f'Cannot link process {self.id} to generator process {next_proc.id}.'
         self.next_proc = next_proc
         self.tx_q = mp.Queue(maxqsize)
         self.next_proc.rx_q = self.tx_q
         return self
 
+    def run_generator_process(self):
+        while True:
+            y = self.target(*self.args)
+            self.put(y)
+            if y is None:
+                break;
+        print(f'stage {self.id} done')
 
-
-    def run(self):
-
+    def run_pipe_process(self):
         while True:
             x = self.get()
 
             if x is None:
                 self.put(None)
                 break
-            y = self.worker.work(x)
+            # y = self.target(x)
+            y = self.target(x, *self.args)
             self.put(y)
+        print(f'stage {self.id} done')
 
-        print('stage done')
+
+def f0(lst):
+
+    x = lst[0]
+    print(x)
+    if x > 10:
+        return None
+    lst[0] += 1
+    return x
+
+def f1(x, *args):
+    return x+1
+
+def f2(x, *args):
+    return x*2
+
+def f3(x, *args):
+    return x**2
+
+def f4(x, *args):
+    return x-3
+
+class GenGen:
+    def __init__(self):
+        self.x = 0
+
+    def work(self):
+
+        print(self.x)
+        if self.x > 10:
+            return None
+        self.x += 1
+        return self.x
 
 
 if __name__ == '__main__':
 
-    w1 = Worker1()
-    w2 = Worker2()
-    w3 = Worker1()
-    w4 = Worker2()
+    x = 1
+    gen = GenGen()
+    p0 = Proc(target=gen.work, args=(), is_generator=True)
+    p1 = Proc(target=f1, args=())
+    p2 = Proc(target=f1, args=())
+    p3 = Proc(target=f1, args=())
+    p4 = Proc(target=f1, args=())
 
-    p1 = Proc(w1)
-    p2 = Proc(w2)
-    p3 = Proc(w3)
-    p4 = Proc(w4)
+    p0.link(p1.link(p2.link(p3.link(p4))))
+    # TODO: add merge and split
 
-    p1.link(p2.link(p3.link(p4)))
+    pipe = MultiprocPipe(p0)
 
-
-    pipe = MultiprocPipe(p1)
-
-
-    # Put values in pipe
-    for i in range(10):
-        print('input:', i)
-        pipe.put(i)
-    pipe.put(None)
+    # # Put values in pipe
+    # for i in range(10):
+    #     print('input:', i)
+    #     pipe.put(i)
+    # pipe.put(None)
 
 
     # Get results from pipe
