@@ -1,11 +1,9 @@
 import multiprocessing as mp
 import types
 
-
 class MultiprocPipe:
     def __init__(self, head_proc, maxqsize=100):
         # Creat multiprocesses
-
         self.head_proc = head_proc
         proc = head_proc
         self.mp_list = []
@@ -14,17 +12,22 @@ class MultiprocPipe:
             self.tail_proc = proc
             proc = proc.next_proc
 
-        if not self.head_proc.is_generator:
+        if self.head_proc.proc_type=='pipe':
             # Create input queue
             self.tx_q = mp.Queue(maxsize=maxqsize)
             self.head_proc.rx_q = self.tx_q
-        else:
+        elif self.head_proc.proc_type=='generator':
             self.tx_q = None
-            print('here')
-
-        # Create output queue
-        self.rx_q = mp.Queue(maxsize=maxqsize)
-        self.tail_proc.tx_q = self.rx_q
+        else:
+            assert False, 'Head process must be of type pipe or generator'
+        
+        if self.tail_proc=='no_output':
+            self.rx_q = None
+        else: # 'pipe', or 'generator'
+            # Create output queue
+            self.rx_q = mp.Queue(maxsize=maxqsize)
+            self.tail_proc.tx_q = self.rx_q
+        
 
         # Start all the processes
         for p in self.mp_list:
@@ -46,32 +49,36 @@ class MultiprocPipe:
 
 
 def is_lambda(obj):
-    return isinstance(obj, types.LambdaType) and obj.__name__ == "<lambda>"
+    return isinstance(obj, types.LambdaType) and obj.__name__ == '<lambda>'
 
 
 class Proc:
     __proc_count = 0 # keep track of how many processes have been created
-    def __init__(self, target, args, is_generator=False, id=None):
+    def __init__(self, target, args = (), proc_type='pipe', id=None):
         assert not is_lambda(target), 'target cannot be a lambda function.'
         # Pipe connections
         self.tx_q = None
         self.rx_q = None
         self.next_proc = None
-        self.is_generator = is_generator
+        self.proc_type = proc_type
         self.target = target
         self.args = args
 
-        if self.is_generator:
-            self.run = self.run_generator_process
-        else:
-            self.run = self.run_pipe_process
-           
 
         if id is None:
             self.id = Proc.__proc_count
         else:
             self.id = id
         Proc.__proc_count += 1
+
+        
+        if self.proc_type == 'generator':
+            self.run = self.run_generator_process
+        elif self.proc_type == 'no_output': # void?
+            self.run = self.run_no_output_process
+        else:
+            self.run = self.run_pipe_process
+
 
     def get(self):
         res = self.rx_q.get()
@@ -83,7 +90,8 @@ class Proc:
         self.tx_q.put(val)
 
     def link(self, next_proc, maxqsize=100):
-        assert not next_proc.is_generator, f'Cannot link process {self.id} to generator process {next_proc.id}.'
+        assert  next_proc.proc_type != 'generator', f'Cannot link process {self.id} to generator process {next_proc.id}.'
+        assert self.proc_type != 'no_output', f'No_Output process {self.id} cannot link onto another process'
         self.next_proc = next_proc
         self.tx_q = mp.Queue(maxqsize)
         self.next_proc.rx_q = self.tx_q
@@ -109,52 +117,48 @@ class Proc:
             self.put(y)
         print(f'stage {self.id} done')
 
+    def run_no_output_process(self):
+        while True:
+            x = self.get()
 
-def f0(lst):
+            if x is None:
+                self.put(None)
+                break
+            self.target(x, *self.args)
+        print(f'stage {self.id} done')
 
-    x = lst[0]
-    print(x)
-    if x > 10:
-        return None
-    lst[0] += 1
-    return x
 
-def f1(x, *args):
-    return x+1
+def func(x, pwr):
+    return x**pwr
 
-def f2(x, *args):
-    return x*2
-
-def f3(x, *args):
-    return x**2
-
-def f4(x, *args):
-    return x-3
-
+# The following class is intended to be an interface to some other class.
+# The interface will manage locks so that object can run in a multiprocess.
 class GenGen:
-    def __init__(self):
+    def __init__(self, n):
+        self.n = n
         self.x = 0
 
     def work(self):
 
-        print(self.x)
-        if self.x > 10:
+        if self.x > self.n:
             return None
         self.x += 1
         return self.x
 
+def void_func(x, *args):
+    print(x)
 
 if __name__ == '__main__':
 
-    x = 1
-    gen = GenGen()
-    p0 = Proc(target=gen.work, args=(), is_generator=True)
-    p1 = Proc(target=f1, args=())
-    p2 = Proc(target=f1, args=())
-    p3 = Proc(target=f1, args=())
-    p4 = Proc(target=f1, args=())
+    gen = GenGen(10)
+    p0 = Proc(target=gen.work, proc_type='generator')
+    p1 = Proc(target=func, args=(2,))
+    p2 = Proc(target=func, args=(2,))
+    p3 = Proc(target=func, args=(2,))
+    p4 = Proc(target=func, args=(2,))
+    p5 = Proc(target=void_func, args=(3,), proc_type='no_output')
 
-    p0.link(p1.link(p2.link(p3.link(p4))))
+    p0.link(p1.link(p2.link(p3.link(p4.link(p5)))))
     # TODO: add merge and split
 
     pipe = MultiprocPipe(p0)
@@ -166,10 +170,10 @@ if __name__ == '__main__':
     # pipe.put(None)
 
 
-    # Get results from pipe
-    while True:
-        v = pipe.get()
-        print('output:', v)
-        if v is None:
-            break
+    # # Get results from pipe
+    # while True:
+    #     v = pipe.get()
+    #     # print('output:', v)
+    #     if v is None:
+    #         break
 
