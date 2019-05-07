@@ -14,22 +14,22 @@ class MultiprocPipe:
 
         # Head process should not be no_output stage, because then the pipe would be no diferent to a si
 
-        if type(self.head_stage) is PipeStage:
+        if type(self.head_stage) is PipeStage or \
+           type(self.head_stage) is VoidStage:
             # Create input queue
             self.tx_q = mp.Queue(maxsize=maxqsize)
             self.head_stage.rx_q = self.tx_q
-        elif type(self.head_stage) is GenStage:
-            self.tx_q = None
         else:
-            assert False, 'Head process must be of type pipe or generator'
+            self.tx_q = None
         
-        if type(self.tail_stage) is VoidStage:
-            self.rx_q = None
-        else: # INPUT_OUTPUT, or NO_INPUT
+        if type(self.tail_stage) is PipeStage or \
+           type(self.tail_stage) is GenStage:
             # Create output queue
             self.rx_q = mp.Queue(maxsize=maxqsize)
             self.tail_stage.tx_q = self.rx_q
-        
+        else:
+            self.rx_q = None
+
         # Start all the processes
         for p in self.mp_list:
             p.start()
@@ -58,7 +58,8 @@ def Stage(target, args=(), is_input=True, is_output=True, id=None):
         return VoidStage(target, args, id)
     if not is_input and is_output:
         return GenStage(target, args, id)
-    raise Warning('Stage process must have at least one input or output. If you only have one process and not input or output queue, then just use a multiprocessing - you do not need a Pipeline.')
+    if not is_input and not is_output:
+        return GenVoidStage(target, args, id)
 
 class PipeStage:
     __stage_count = 0 # keep track of how many processes have been created
@@ -147,6 +148,29 @@ class GenStage(PipeStage):
                 break
         print(f'stage {self.id} done')
 
+class GenVoidStage(PipeStage):
+    """This class is only here for completness"""
+    def __init__(self, target, args=(), id=None):
+        PipeStage.__init__(self, target, args, id)
+        self.tx_q = None
+        self.next_stage = None
+        # This stage cannot receive inputs. rx_q not required
+        del(self.rx_q)
+        del(self.tx_q)
+
+    def get(self):
+        self._raise_type_error('get')
+
+    def put(self, val):
+        self._raise_type_error('put')
+
+    def run(self):
+        while True:
+            y = self.target(*self.args)
+            if y is None:
+                break
+        print(f'stage {self.id} done')
+
 
 
 def func(x, pwr):
@@ -166,11 +190,29 @@ class GenGen:
         self.x += 1
         return self.x
 
+class GenVoid:
+    def __init__(self, n):
+        self.n = n
+        self.x = 0
+
+    def work(self):
+        print(self.x)
+        if self.x > self.n:
+            return None
+        self.x += 1
+        return self.x
+
 def void_func(x, *args):
     print(x)
 
 if __name__ == '__main__':
 
+    
+    gen_void = GenVoid(10)
+    px = Stage(target=gen_void.work, is_input=False, is_output=False, id='gen_void_1')
+    pipe = MultiprocPipe(px)
+
+    
     gen = GenGen(10)
     p0 = Stage(target=gen.work, is_input=False)
     p1 = Stage(target=func, args=(2,))
