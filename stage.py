@@ -1,7 +1,6 @@
 import multiprocessing as mp
-from abc import ABC, abstractmethod
 
-class BaseStage(ABC):
+class BaseStage():
     __stage_count = 0 # keep track of how many processes have been created
     def __init__(self, worker, id=None):
         self._worker = worker
@@ -12,26 +11,8 @@ class BaseStage(ABC):
             self.id = id
         BaseStage.__stage_count += 1
 
-    @abstractmethod
-    def run(self):
-        pass
-
-    # @abstractmethod
-    # def init2(self):
-        # pass
-   
-class GetterStage:
-    def __init__(self, id=None):
-        self.rx_q = None
-
-    def get(self):
-        res = self.rx_q.get()
-        if res is None:
-            self.rx_q.close()
-        return res
-
-class PutterStage:
-    def __init__(self, id=None):
+class Putter:
+    def __init__(self):
         self.tx_q = None
         self.next_stage = None
         self.has_put = False
@@ -48,7 +29,7 @@ class PutterStage:
         self.has_put = True
 
     def link(self, next_stage, maxqsize=100):
-        if not isinstance(next_stage, GetterStage):
+        if not isinstance(next_stage, (VoidStage, PipeStage)):
             raise TypeError(f'Cannot link process {self.id} to a non-getter stage {next_stage.id}.')
 
         self.next_stage = next_stage
@@ -56,26 +37,35 @@ class PutterStage:
         self.next_stage.rx_q = self.tx_q
         return self
 
-class PipeStage(BaseStage, GetterStage, PutterStage):
-    def __init__(self, worker, id=None):
-        BaseStage.__init__(self, worker, id)
-        GetterStage.__init__(self, id)
-        PutterStage.__init__(self, id) 
+   
+class Getter:
+    def __init__(self):
+        self.rx_q = None
 
-    def run(self):
-        while True:
-            x = self.get()
-            if x is None:
-                self.implicit_put(None)
-                break
-            y = self._worker.do_work(x) # target(x, *self.args)
-            self.implicit_put(y)
-        print(f'stage {self.id} done')
+    def get(self):
+        res = self.rx_q.get()
+        if res is None:
+            self.rx_q.close()
+        return res
 
-class VoidStage(BaseStage, GetterStage):
+
+class VoidStage(BaseStage):
     def __init__(self, worker, id=None):
-        BaseStage.__init__(self, worker, id)
-        GetterStage.__init__(self, id)
+        BaseStage.__init__(self, worker, id) # init base class
+        self.getter_obj = Getter()
+
+    def get(self):
+        return self.getter_obj.get()
+
+    @property
+    def rx_q(self):
+        return self.getter_obj.rx_q
+
+
+    @rx_q.setter
+    def rx_q(self, rx_q):
+        self.getter_obj.rx_q = rx_q
+
         
     def run(self):
         while True:
@@ -85,10 +75,33 @@ class VoidStage(BaseStage, GetterStage):
             self._worker.do_work(x) # target(x, *self.args)
         print(f'stage {self.id} done')
 
-class GenStage(BaseStage, PutterStage):
+class GenStage():
     def __init__(self, worker, id=None):
         BaseStage.__init__(self, worker, id)
-        PutterStage.__init__(self, id) 
+        self.putter_obj = Putter()
+
+    def implicit_put(self, task):
+        self.putter_obj.implicit_put(task)
+
+    def explicit_put(self, task):
+        self.putter_obj.explicit_put(task)
+
+    def link(self, next_stage, maxqsize=100):
+        self.putter_obj.link(next_stage, maxqsize)
+
+    @property
+    def next_stage(self):
+        return self.putter_obj.next_stage
+
+    @property
+    def tx_q(self):
+        return self.putter_obj.tx_q
+
+    @tx_q.setter
+    def tx_q(self, tx_q):
+        self.putter_obj.tx_q = tx_q
+
+
 
     def run(self):
         while True:
@@ -112,6 +125,57 @@ class GenVoidStage(BaseStage):
                 break
         print(f'stage {self.id} done')
 
+
+class PipeStage():
+    def __init__(self, worker, id=None):
+        BaseStage.__init__(self, worker, id) # init base class
+        self.getter_obj = Getter()
+        self.putter_obj = Putter()
+
+    def get(self):
+        return self.getter_obj.get()
+
+    def implicit_put(self, task):
+        self.putter_obj.implicit_put(task)
+
+    def explicit_put(self, task):
+        self.putter_obj.explicit_put(task)
+
+    def link(self, next_stage, maxqsize=100):
+        self.putter_obj.link(next_stage, maxqsize)
+
+    @property
+    def next_stage(self):
+        return self.putter_obj.next_stage
+
+    @property
+    def tx_q(self):
+        return self.putter_obj.tx_q
+
+    @tx_q.setter
+    def tx_q(self, tx_q):
+        self.putter_obj.tx_q = tx_q
+
+    @property
+    def rx_q(self):
+        return self.getter_obj.rx_q
+
+    @rx_q.setter
+    def rx_q(self, rx_q):
+        self.getter_obj.rx_q = rx_q
+
+
+    def run(self):
+        while True:
+            x = self.get()
+            if x is None:
+                self.implicit_put(None)
+                break
+            y = self._worker.do_work(x) # target(x, *self.args)
+            self.implicit_put(y)
+        print(f'stage {self.id} done')
+
+    
         
 def stage(wobj, id=None):
     return wobj.stage(id)

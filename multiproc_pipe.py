@@ -35,6 +35,14 @@ class Square2(PipeWorker):
         self.put(x*x)
         self.put(x*x)
 
+def f(lst):
+    x = lst[0]
+    if x < 10:
+        print(f'f: {x}')
+        lst[0] += 1
+        return x
+    return None
+
     
 if __name__ == '__main__':
 
@@ -52,7 +60,10 @@ if __name__ == '__main__':
     
 
     # # Test only one GenVoid pipline/stage
-    worker = MyWorkerClass(20)
+
+    # worker = MyWorkerClass(20)
+    x = 0
+    worker = GenVoidWorker(f, args=([x,],))
     p0 = stage(worker)
     print(p0)
     pipe = Pipeline(p0)
