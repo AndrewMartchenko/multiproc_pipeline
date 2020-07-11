@@ -1,6 +1,79 @@
 from abc import ABC, abstractmethod
 from stage import GenVoidStage, GenStage, VoidStage, PipeStage
 
+
+# class WorkerBase(ABC):
+#     # def __init__(self):
+#     def __init__(self, target, args=()):
+#         # self.__stage_obj = None
+
+#         self._target = target
+#         self._args = args
+
+
+
+#     # def stage_builder(self, StageClass, id):
+#         # self.__stage_obj = StageClass(self, id)
+
+#     # @property
+#     # def stage_obj(self):
+#         # return self.__stage_obj
+        
+#     @abstractmethod
+#     def stage(self, id):
+#         pass
+
+#     @abstractmethod
+#     def do_work(self):
+#         pass
+
+# # class PutterWorkerComponent():
+# #     def __init__(self):
+# #         pass
+# #     def put(self, x):
+# #         self.stage_obj.explicit_put(x)
+
+# class GenVoidWorker(WorkerBase):
+#     def __init__(self):
+#         pass
+#     def stage(self, id=None):
+#         return GenVoidStage(self, id)
+#     def do_work(self):
+#         return self._target(x, *self._args)
+
+    
+# class GenWorker(WorkerBase):
+#     def __init__(self):
+#         pass
+#     def stage(self, id=None):
+#         return GenStage(self, id)
+#     def do_work(self):
+#         return self._target(x, *self._args)
+
+
+# class VoidWorker(WorkerBase):
+#     def __init__(self):
+#         pass
+#     def stage(self, id=None):
+#         return VoidStage(self, id)
+#     def do_work(self, x):
+#         return self._target(x, *self._args)
+
+
+# class PipeWorker(WorkerBase):
+#     def __init__(self):
+#         pass
+#     def stage(self, id=None):
+#         return PipeStage(self, id)
+#     def do_work(self, x):
+#         return self._target(x, *self._args)
+
+
+
+
+
+
+
 class Worker(ABC):
     # def __init__(self):
     def __init__(self, target, args=()):

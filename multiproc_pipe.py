@@ -1,4 +1,8 @@
-from __init__ import *
+# from __init__ import *
+from pipeline import Pipeline
+from stage import PipeStage, VoidStage, GenVoidStage, GenStage, stage
+from worker import PipeWorker, VoidWorker, GenVoidWorker, GenWorker
+
 
 
 # TODO:
@@ -13,6 +17,9 @@ from __init__ import *
     # return isinstance(obj, types.LambdaType) and obj.__name__ == '<lambda>'
 
 
+# Note: I don't like these overloaded worker classes as they require knowlede of the
+# internal workings of the variouse worker classes.
+
 class MyWorkerClass(GenVoidWorker): # or GenWorker or GenVoidWorker or PipeWorker
     def __init__(self, n):
         self.n = n
@@ -23,16 +30,16 @@ class MyWorkerClass(GenVoidWorker): # or GenWorker or GenVoidWorker or PipeWorke
         if self.x > self.n:
             return None
         self.x += 1
-        return self.x
+        return self.x 
 
 class Square(PipeWorker):
     def do_work(self, x):
-        return x*x
+        return x*x # return will implicitly put the result onto queue
 
 
 class Square2(PipeWorker):
     def do_work(self, x):
-        self.put(x*x)
+        self.put(x*x) # self.put will explicitly put result onto queue as many times as you like
         self.put(x*x)
 
 def f(lst):
@@ -46,6 +53,48 @@ def f(lst):
     
 if __name__ == '__main__':
 
+    # New simplified version
+    # ======================
+
+    # There will be no distinction between workers and stages
+
+    # A stage will contain
+    # 1. A function to execute. Return type will be pushed onto the next stage
+    # 2. Number of processes
+    # 3. flag ordered or unordered stage
+
+    # Pipeline structure will determine wether a stage is a gen, pipe, or void stage
+
+    # e.g.
+    #        -- s1 --                                                             
+    #       /        \                                                           
+    # s0 --+--- s2 ---+-- s4                                                   
+    #       \                                                                  
+    #        -- s3 --N
+    
+    s0 = stage(func=f0, nproc=5, stage_type='ordered', push_out=True)
+    s1 = stage(func=f1, nproc=5, stage_type='ordered', push_out=True)
+    s2 = stage(func=f2, nproc=5, stage_type='ordered', push_out=True)
+    s3 = stage(func=f3, nproc=5, stage_type='ordered', push_out=False)
+    s4 = stage(func=f4, nproc=5, stage_type='ordered', push_out=True)
+
+    s0.link(s1, s2, s3)
+    s3.merge(s1, s2)
+    
+    
+
+
+
+
+
+
+
+
+
+
+
+
+    
     # How do I want to use the class
 
     # 1. Define worker worker object

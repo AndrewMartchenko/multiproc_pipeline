@@ -11,7 +11,7 @@ class BaseStage():
             self.id = id
         BaseStage.__stage_count += 1
 
-class Putter:
+class PutterStageComponent:
     def __init__(self):
         self.tx_q = None
         self.next_stage = None
@@ -38,7 +38,7 @@ class Putter:
         return self
 
    
-class Getter:
+class GetterStageComponent:
     def __init__(self):
         self.rx_q = None
 
@@ -52,7 +52,7 @@ class Getter:
 class VoidStage(BaseStage):
     def __init__(self, worker, id=None):
         BaseStage.__init__(self, worker, id) # init base class
-        self.getter_obj = Getter()
+        self.getter_obj = GetterStageComponent()
 
     def get(self):
         return self.getter_obj.get()
@@ -78,7 +78,7 @@ class VoidStage(BaseStage):
 class GenStage():
     def __init__(self, worker, id=None):
         BaseStage.__init__(self, worker, id)
-        self.putter_obj = Putter()
+        self.putter_obj = PutterStageComponent()
 
     def implicit_put(self, task):
         self.putter_obj.implicit_put(task)
@@ -120,7 +120,7 @@ class GenVoidStage(BaseStage):
     
     def run(self):
         while True:
-            y = self._worker.do_work()
+            y = self._worker.do_work(None)
             if y is None:
                 break
         print(f'stage {self.id} done')
@@ -129,8 +129,8 @@ class GenVoidStage(BaseStage):
 class PipeStage():
     def __init__(self, worker, id=None):
         BaseStage.__init__(self, worker, id) # init base class
-        self.getter_obj = Getter()
-        self.putter_obj = Putter()
+        self.getter_obj = GetterStageComponent()
+        self.putter_obj = PutterStageComponent()
 
     def get(self):
         return self.getter_obj.get()
