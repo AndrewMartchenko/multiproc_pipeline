@@ -1,5 +1,70 @@
 import multiprocessing as mp
 
+class Stage():
+    __count = 0 # Count stages to asign unique id
+    
+    def __init__(self, func, nprocs=1, order='ordered', inputs=True, outputs=True, id=None):
+        self.__func = func
+        self.__nprocs = nprocs
+        self.__order = order
+        self.__outputs = outputs
+        self.__inputs = inputs
+
+        if id is None:
+            self.id = Stage.__count
+        else:
+            self.id = id
+        Stage.__count += 1
+
+        # Queue objects
+        self.rx_q = None
+        self.tx_q = None
+        
+        self.next_stage = None
+
+
+    def get(self):
+        res = self.rx_q.get()
+        if res is None:
+            self.rx_q.close()
+        return res
+
+
+    def put(self, task):
+        if self.tx_q is not None:
+            self.tx_q.put(task)
+        # else:
+        #   do nothing because this stage is not linked to another stage
+
+    def link(self, next_stage, maxqsize=100):
+
+        # if len(next_stage) > 1:
+        #     create a splitter stage to get data from parent and
+        #     copy the message and pass it on to the branch stages
+
+        self.next_stage = next_stage
+        self.tx_q = mp.Queue(maxqsize)
+        self.next_stage.rx_q = self.tx_q
+        return self
+
+    def run(self):
+        # print(f'Stage {self.id} started')
+        while True:
+            x = self.get()
+            if x is None:
+                self.put(None) # this 
+                break
+            # print('x', x)
+            y = self.__func(x)
+            print(f'Stage {self.id} result {y}')
+            self.put(y)
+        print(f'Stage {self.id} done')
+
+
+
+    
+
+
 class BaseStage():
     __stage_count = 0 # keep track of how many processes have been created
     def __init__(self, worker, id=None):
